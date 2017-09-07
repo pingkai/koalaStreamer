@@ -76,7 +76,6 @@ void koala_muxer_reg_data_callback(koala_muxer * pHandle,
     pHandle->acb_arg = acb_arg;
     pHandle->vcb     = vcb;
     pHandle->vcb_arg = vcb_arg;
-    return;
 }
 static void sendEvent(koala_muxer *pHandle, int event){
     if(NULL==pHandle){
@@ -173,28 +172,28 @@ int koala_muxer_init_open(koala_muxer *pHandle, const char* outName,const char *
         koala_trace;
       //  AVCodec *codec = avcodec_find_decoder(koalaCodecID2AVCodecID(meta->codec));
         AVStream *st = avformat_new_stream(pHandle->oc, NULL);
-        st->codec->codec_type = AVMEDIA_TYPE_AUDIO;
-        st->codec->codec_id = koalaCodecID2AVCodecID(meta->codec);
-        st->codec->sample_rate = meta->samplerate;
-        st->codec->channel_layout = av_get_channel_layout_nb_channels(meta->channels);
-        st->codec->channels = meta->channels;
+        st->codecpar->codec_type = AVMEDIA_TYPE_AUDIO;
+        st->codecpar->codec_id = koalaCodecID2AVCodecID(meta->codec);
+        st->codecpar->sample_rate = meta->samplerate;
+        st->codecpar->channel_layout = (uint64_t) av_get_channel_layout_nb_channels(meta->channels);
+        st->codecpar->channels = meta->channels;
         /* take first format from list of supported formats */
         st->codec->sample_fmt = (enum AVSampleFormat)meta->sample_fmt;
         st->codec->time_base = (AVRational){1, st->codec->sample_rate};
         st->codec->frame_size = meta->frame_size;
         pHandle->audio_stream = st->index;
         pHandle->pAudioStream = st;
-        if (st->codec->codec_id == AV_CODEC_ID_AAC){
+        if (st->codecpar->codec_id == AV_CODEC_ID_AAC){
             // TODO: check adts header
         //    pHandle->aac_bsf = av_bitstream_filter_init("aac_adtstoasc");
         //wlj    ff_stream_add_bitstream_filter(st, "aac_adtstoasc", NULL);
         }
         st->codec->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
         if (meta->extradata_size > 0){
-            st->codec->extradata = malloc(meta->extradata_size + AV_INPUT_BUFFER_PADDING_SIZE);
-            memcpy(st->codec->extradata,meta->extradata,meta->extradata_size);
+            st->codecpar->extradata = malloc(meta->extradata_size + AV_INPUT_BUFFER_PADDING_SIZE);
+            memcpy(st->codecpar->extradata,meta->extradata,meta->extradata_size);
         }
-        st->codec->extradata_size = meta->extradata_size;
+        st->codecpar->extradata_size = meta->extradata_size;
         if (!strncmp(fmt->name,"flv",3))
             pHandle->conAbase = (AVRational){1,1000};
         else
@@ -211,20 +210,20 @@ int koala_muxer_init_open(koala_muxer *pHandle, const char* outName,const char *
             goto fail;
         }
 
-        st->codec->height = meta->height;
-        st->codec->width = meta->width;
-        st->codec->codec_type = AVMEDIA_TYPE_VIDEO;
-        st->codec->codec_id = koalaCodecID2AVCodecID(meta->codec);
+        st->codecpar->height = meta->height;
+        st->codecpar->width = meta->width;
+        st->codecpar->codec_type = AVMEDIA_TYPE_VIDEO;
+        st->codecpar->codec_id = koalaCodecID2AVCodecID(meta->codec);
         if (meta->extradata_size > 0){
-            st->codec->extradata = malloc(meta->extradata_size + AV_INPUT_BUFFER_PADDING_SIZE);
-            memcpy(st->codec->extradata,meta->extradata,meta->extradata_size);
+            st->codecpar->extradata = malloc(meta->extradata_size + AV_INPUT_BUFFER_PADDING_SIZE);
+            memcpy(st->codecpar->extradata,meta->extradata,meta->extradata_size);
         }
-        st->codec->extradata_size = meta->extradata_size;
+        st->codecpar->extradata_size = meta->extradata_size;
         st->codec->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
 
         // TODO: get it
         AVRational r = {1,1};
-        st->codec->sample_aspect_ratio = r;
+        st->codecpar->sample_aspect_ratio = r;
         /* take first format from list of supported formats */
 
         // TODO: get it

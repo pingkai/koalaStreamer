@@ -1,6 +1,6 @@
 
 
-#include <stdio.h>
+#include <cstdio>
 
 #ifdef __cplusplus
 extern "C" {
@@ -21,7 +21,7 @@ extern "C" {
 
 class FFEncoderThread : public mediaThread {
 public:
-    FFEncoderThread(const char *name);
+    explicit FFEncoderThread(const char *name);
 
     ~FFEncoderThread();
 
@@ -43,7 +43,8 @@ private:
     int mPcmSize;
 };
 
-FFEncoderThread::FFEncoderThread(const char *name) : mediaThread(name) {
+FFEncoderThread::FFEncoderThread(const char *name) : mediaThread(name), mEnc(nullptr), mCodecCtx(nullptr), mpStream(
+        nullptr) {
     mPCMBuffer = NULL;
     mPcmSize = 0;
 }
@@ -52,31 +53,39 @@ FFEncoderThread::~FFEncoderThread() {
     stop();
     avcodec_close(mCodecCtx);
     avcodec_free_context(&mCodecCtx);
-    if (mPCMBuffer)
+    if (mPCMBuffer != nullptr)
         free(mPCMBuffer);
 }
 
 int FFEncoderThread::initThread(AVCodecID codecID, AVStream *pStream, int64_t bit_rate) {
-    AVDictionary *format_opts = NULL;
+    AVDictionary *format_opts = nullptr;
     mpStream             = pStream;
     mEnc                 = avcodec_find_encoder(codecID);
+    if (mEnc){
+        LOGD("encoder is %s \n",mEnc->name);
+    } else
+        LOGE("No encoder find\n");
     mCodecCtx            = avcodec_alloc_context3(mEnc);
     mCodecCtx->time_base = mpStream->codec->time_base;
     mCodecCtx->bit_rate  = bit_rate;
     if (mpStream->codec->codec_type == AVMEDIA_TYPE_VIDEO) {
+        TRACE;
         mCodecCtx->pix_fmt  = mpStream->codec->pix_fmt;
         mCodecCtx->height   = mpStream->codec->height;
         mCodecCtx->width    = mpStream->codec->width;
         mCodecCtx->flags   |= AV_CODEC_FLAG_GLOBAL_HEADER;
         av_dict_set_int(&format_opts, "realtime", 1, 0);
+        av_dict_set_int(&format_opts, "allow_sw", 1, 0);
     } else if (mpStream->codec->codec_type == AVMEDIA_TYPE_AUDIO) {
+        TRACE;
         if (pStream &&
             (pStream->codec->codec_id    >= AV_CODEC_ID_FIRST_AUDIO)
             && (pStream->codec->codec_id <= AV_CODEC_ID_PCM_S16BE_PLANAR)) {
             mEnc = avcodec_find_encoder_by_name("aac_at");
             if (mEnc != NULL) {
                 printf("audio encoder is %s\n", mEnc->name);
-            }
+            } else
+                LOGD("can't open encoder\n");
             mCodecCtx = avcodec_alloc_context3(mEnc);
             mCodecCtx->sample_fmt     = pStream->codec->sample_fmt;
             printf("sample_fmt is %d\n", mCodecCtx->sample_fmt);
@@ -264,8 +273,8 @@ static int audio_callback(void *arg, int cmd, void **data, int *size) {
         case callback_cmd_get_source_meta:
             memset(&streamer->metaA, 0, sizeof(Stream_meta));
             streamer->metaA.codec      = KOALA_CODEC_ID_AAC;
-            streamer->metaA.channels   = streamer->pAudioStream->codec->channels;
-            streamer->metaA.samplerate = streamer->pAudioStream->codec->sample_rate;
+            streamer->metaA.channels   = streamer->pAudioStream->codecpar->channels;
+            streamer->metaA.samplerate = streamer->pAudioStream->codecpar->sample_rate;
             streamer->metaA.extradata_size = streamer->mpThreadAE->getExradata(&(streamer->metaA.extradata));
 
             *data = &streamer->metaA;
@@ -300,9 +309,9 @@ static int video_callback(void *arg, int cmd, void **data, int *size) {
      //       pthread_create(&(streamer->ff_devices_thread), NULL, ff_read_devices, streamer);
             memset(&streamer->meta, 0, sizeof(Stream_meta));
             streamer->meta.codec   = KOALA_CODEC_ID_H264;
-            printf("xxxxx width = %d\n", streamer->pVideoStream->codec->width);
-            streamer->meta.width   = streamer->pVideoStream->codec->width;
-            streamer->meta.height  = streamer->pVideoStream->codec->height;
+            printf("xxxxx width = %d\n", streamer->pVideoStream->codecpar->width);
+            streamer->meta.width   = streamer->pVideoStream->codecpar->width;
+            streamer->meta.height  = streamer->pVideoStream->codecpar->height;
             streamer->meta.avg_fps = 30;
             streamer->meta.type = STREAM_TYPE_VIDEO;
             streamer->meta.extradata_size = streamer->mpThreadVE->getExradata(&(streamer->meta.extradata));
@@ -338,6 +347,8 @@ static int open_input(streamer_cont *pHandle, const char *url) {
     AVDictionary *format_opts;
     av_dict_set_int(&format_opts, "pixel_format", AV_PIX_FMT_NV12, 0);
     av_dict_set_int(&format_opts, "framerate", 30, 0);
+    av_dict_set(&format_opts, "video_size", "1280*720", 0);
+
     pHandle->pFormatCtx = avformat_alloc_context();
     pHandle->ifmt       = av_find_input_format("avfoundation");
 
@@ -352,21 +363,21 @@ static int open_input(streamer_cont *pHandle, const char *url) {
 
     int i;
     for (i = 0; i < pHandle->pFormatCtx->nb_streams; i++) {
-        if (pHandle->pFormatCtx->streams[i]->codec->codec_type == AVMEDIA_TYPE_VIDEO) {
+        if (pHandle->pFormatCtx->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_VIDEO) {
             printf("found a video stream\n");
             pHandle->pVideoStream = pHandle->pFormatCtx->streams[i];
             pHandle->video_index  = i;
-            if (pHandle->pVideoStream->codec->codec_id == AV_CODEC_ID_RAWVIDEO) {
+            if (pHandle->pVideoStream->codecpar->codec_id == AV_CODEC_ID_RAWVIDEO) {
                 printf("pix fmt is %d AV_PIX_FMT_NV12 is %d\n", pHandle->pVideoStream->codec->pix_fmt, AV_PIX_FMT_NV12);
-                printf("%d X %d\n", pHandle->pVideoStream->codec->height, pHandle->pVideoStream->codec->width);
+                printf("%d X %d\n", pHandle->pVideoStream->codecpar->height, pHandle->pVideoStream->codecpar->width);
             }
-        } else if (pHandle->pFormatCtx->streams[i]->codec->codec_type == AVMEDIA_TYPE_AUDIO) {
+        } else if (pHandle->pFormatCtx->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_AUDIO) {
             printf("found a Audio stream\n");
             pHandle->pAudioStream = pHandle->pFormatCtx->streams[i];
-            LOGD("audio codec is %x AV_CODEC_ID_PCM_F32LE is %x\n", pHandle->pAudioStream->codec->codec_id,
+            LOGD("audio codec is %x AV_CODEC_ID_PCM_F32LE is %x\n", pHandle->pAudioStream->codecpar->codec_id,
                  AV_CODEC_ID_PCM_F32LE);
             pHandle->audio_index = i;
-            LOGD("Audio channel is %d\n", pHandle->pFormatCtx->streams[i]->codec->channels);
+            LOGD("Audio channel is %d\n", pHandle->pFormatCtx->streams[i]->codecpar->channels);
         }
     }
 
@@ -387,7 +398,7 @@ static int initMediaThread(streamer_cont *pHandle) {
         pHandle->pVEQueue   = new mediaFrameQueue(100);
         pHandle->mpThreadVE->setOutputQueue(pHandle->pVEQueue);
         pHandle->mpThreadVE->setMediaFrameStack(pHandle->pFrameStack);
-        pHandle->mpThreadVE->initThread(AV_CODEC_ID_H264, pHandle->pVideoStream, 2 * 1024 * 1024);
+        pHandle->mpThreadVE->initThread(AV_CODEC_ID_H264, pHandle->pVideoStream, 2* 1024 * 1024ll);
     }
     if (pHandle->audio_index >= 0) {
         pHandle->pPCMQueue  = new mediaFrameQueue(20);
@@ -521,7 +532,7 @@ int main(int argc, const char **argv) {
     mediaStreamer_set_inPut(pHandle->streamer, &myCb);
     mediaStreamer_set_outPut(pHandle->streamer, argv[1], "flv");
     mediaStreamer_setListener(pHandle->streamer, MyMediaStreamerListener, pHandle);
-    mediaStreamer_prepare(pHandle->streamer);
+   mediaStreamer_prepare(pHandle->streamer);
     char c;
     while (!pHandle->stop) {
         c = (char) getchar();

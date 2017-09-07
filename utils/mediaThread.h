@@ -46,7 +46,7 @@ typedef enum {
 
 class mediaThread {
 public:
-    mediaThread(const char*name);
+    explicit mediaThread(const char*name);
     void setMediaFrameStack(StreamerStack<mediaFrame *> *pFrameStac);
     int start();
     int pause();
